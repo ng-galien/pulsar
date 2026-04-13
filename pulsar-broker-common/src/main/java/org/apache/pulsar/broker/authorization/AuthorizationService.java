@@ -19,6 +19,7 @@
 package org.apache.pulsar.broker.authorization;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import io.opentelemetry.api.OpenTelemetry;
 import java.net.SocketAddress;
 import java.util.List;
 import java.util.Map;
@@ -63,10 +64,17 @@ public class AuthorizationService {
     private final PulsarResources resources;
     private final AuthorizationProvider provider;
     private final ServiceConfiguration conf;
+    private final AuthorizationMetrics authorizationMetrics;
 
     public AuthorizationService(ServiceConfiguration conf, PulsarResources pulsarResources)
             throws PulsarServerException {
+        this(conf, pulsarResources, OpenTelemetry.noop());
+    }
+
+    public AuthorizationService(ServiceConfiguration conf, PulsarResources pulsarResources, OpenTelemetry openTelemetry)
+            throws PulsarServerException {
         this.conf = conf;
+        this.authorizationMetrics = new AuthorizationMetrics(openTelemetry);
         try {
             final String providerClassname = conf.getAuthorizationProvider();
             if (StringUtils.isNotBlank(providerClassname)) {
@@ -960,7 +968,7 @@ public class AuthorizationService {
     }
 
     private CompletableFuture<Boolean> deniedFuture(String resourceType, String operation) {
-        AuthorizationMetrics.recordFailure(resourceType, operation);
+        authorizationMetrics.recordFailure(resourceType, operation);
         return CompletableFuture.completedFuture(false);
     }
 
@@ -970,9 +978,9 @@ public class AuthorizationService {
         return authorizationFuture.whenComplete((allowed, exception) -> {
             if (exception == null) {
                 if (Boolean.TRUE.equals(allowed)) {
-                    AuthorizationMetrics.recordSuccess(resourceType, operation);
+                    authorizationMetrics.recordSuccess(resourceType, operation);
                 } else if (Boolean.FALSE.equals(allowed)) {
-                    AuthorizationMetrics.recordFailure(resourceType, operation);
+                    authorizationMetrics.recordFailure(resourceType, operation);
                 }
             }
         });
